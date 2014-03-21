@@ -14,6 +14,9 @@
  *  limitations under the License.
  *
  */
+
+#include "buffer.h"
+
 #include <openssl/ssl.h>
 
 
@@ -46,14 +49,14 @@ static BIO* _lua_load_bio(lua_State *L, int index) {
   int r = -1;
   BIO *bio;
 
-  data = luaL_checklstring(L, index, &len);
+  buffer* buf = buffer_get(L, index);
 
   bio = BIO_new(BIO_s_mem());
   if (!bio) {
     return NULL;
   }
 
-  r = BIO_write(bio, data, len);
+  r = BIO_write(bio, BUFFER_DATA(buf), buf->length);
 
   if (r <= 0) {
     BIO_free(bio);
@@ -185,17 +188,20 @@ tls_sc_set_key(lua_State *L) {
   tls_sc_t *ctx;
   EVP_PKEY* key;
   BIO *bio;
-  const char *passpharse = NULL;
-  const char *keystr = NULL;
-  size_t klen = 0;
+  const char *passphrase = NULL;
   size_t plen = 0;
 
   ctx = getSC(L);
 
-  keystr = luaL_checklstring(L, 2, &klen);
-  passpharse = luaL_optlstring(L, 3, NULL, &plen);
+  buffer* keybuf = buffer_get(L, 2);
+  passphrase = luaL_optlstring(L, 3, NULL, &plen);
 
-  bio = str2bio(keystr, klen);
+  bio = str2bio(BUFFER_DATA(keybuf), keybuf->len);
+  if(keybuf->isConst == 0) {
+      memset(BUFFER_DATA(keybuf),0,keybuf->len);
+  }
+  buffer_empty(keybuf);
+
   if (!bio) {
     return luaL_error(L, "tls_sc_set_key: Failed to convert Key into a BIO");
   }
@@ -203,7 +209,7 @@ tls_sc_set_key(lua_State *L) {
   ERR_clear_error();
 
   /* If the 3rd arg is NULL, the 4th arg is treated as a const char* istead of void* */
-  key = PEM_read_bio_PrivateKey(bio, NULL, NULL, (void*)passpharse);
+  key = PEM_read_bio_PrivateKey(bio, NULL, NULL, (void*)passphrase);
 
   if (!key) {
     return tls_fatal_error(L);
@@ -333,15 +339,17 @@ static int
 tls_sc_set_cert(lua_State *L) {
   tls_sc_t *ctx;
   BIO *bio;
-  const char *keystr = NULL;
-  size_t klen = 0;
   int rv;
 
   ctx = getSC(L);
 
-  keystr = luaL_checklstring(L, 2, &klen);
+  buffer* keybuf = buffer_get(L, 2);
 
-  bio = str2bio(keystr, klen);
+  bio = str2bio(BUFFER_DATA(keybuf), keybuf->length);
+  if(keybuf->isConst == 0) {
+      memset(BUFFER_DATA(keybuf),0,keybuf->len);
+  }
+  buffer_empty(keybuf);
   if (!bio) {
     return luaL_error(L, "tls_sc_set_key: Failed to convert Cert into a BIO");
   }
@@ -364,7 +372,6 @@ static int
 tls_sc_add_trusted_cert(lua_State *L) {
   tls_sc_t *ctx;
   BIO *bio;
-  const char *certstr = NULL;
   size_t clen = 0;
   int rv;
 
@@ -376,9 +383,9 @@ tls_sc_add_trusted_cert(lua_State *L) {
     SSL_CTX_set_cert_store(ctx->ctx, ctx->ca_store);
   }
 
-  certstr = luaL_checklstring(L, 2, &clen);
+  buffer* certbuf = buffer_get(L, 2);
 
-  bio = str2bio(certstr, clen);
+  bio = str2bio(BUFFER_DATA(certbuf), certbuf->length);
 
   if (!bio) {
     return luaL_error(L, "tls_sc_add_trusted_cert: Failed to convert Cert into a BIO");
@@ -401,16 +408,15 @@ tls_sc_add_trusted_cert(lua_State *L) {
 static int
 tls_sc_set_ciphers(lua_State *L) {
   tls_sc_t *ctx;
-  const char *cipherstr = NULL;
   int rv;
 
   ctx = getSC(L);
 
-  cipherstr = luaL_checkstring(L, 2);
+  buffer* cipherbuf = buffer_get(L, 2);
 
   ERR_clear_error();
 
-  rv = SSL_CTX_set_cipher_list(ctx->ctx, cipherstr);
+  rv = SSL_CTX_set_cipher_list(ctx->ctx, cipherbuf->data);
 
   if (rv == 0) {
     return tls_fatal_error(L);

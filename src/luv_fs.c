@@ -15,6 +15,8 @@
  *
  */
 
+#include "buffer.h"
+
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
@@ -142,9 +144,8 @@ int luv_process_fs_result(lua_State* L, uv_fs_t* req) {
 
       case UV_FS_READ:
         argc = 2;
-        lua_pushlstring(L, ref->buf, req->result);
+        buffer_slice(L,ref->buf,0,req->result);
         lua_pushinteger(L, req->result);
-        free(ref->buf);
         break;
 
       case UV_FS_READDIR:
@@ -248,15 +249,22 @@ int luv_fs_read(lua_State* L) {
   int offset = -1;
   int length;
   uv_fs_t* req;
-  void* buf;
   if (!lua_isnil(L, 2)) {
     offset = luaL_checkint(L, 2);
   }
   length = luaL_checkint(L, 3);
   req = luv_fs_store_callback(L, 4);
-  buf = malloc(length);
-  ((luv_fs_ref_t*)req->data)->buf = buf;
-  FS_CALL(read, 4, NULL, file, buf, length, offset);
+  luv_fs_ref_t* self = ((luv_fs_ref_t*)req->data);
+  buffer* buf = self->buf;
+  if(buf == NULL) {
+      self->buf = buf = buffer_new(L);
+      buf_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+  }
+  if(buf->length < length) {
+      buffer_alloc(buf,length);
+  }
+
+  FS_CALL(read, 4, NULL, file, buf->data, buf->length, offset);
 }
 
 int luv_fs_write(lua_State* L) {

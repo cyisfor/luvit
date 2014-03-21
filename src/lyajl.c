@@ -127,7 +127,8 @@ static int lyajl_on_string (void * ctx, const unsigned char* value, size_t len) 
 
   /* If there is a callback, call it */
   if (lua_isfunction (L, -1)) {
-    lua_pushlstring(L, (const char*)value, len);
+    buffer* buf = buffer_new(L);
+    buffer_wrap_const(buf,value,len);
     lua_call(L, 1, 0);
   } else {
     lua_pop(L, 1);
@@ -254,15 +255,14 @@ luvit_generator_t* generator_new(lua_State *L) {
 
 static int lyajl_parse (lua_State *L) {
   size_t len;
-  const char *chunk;
   luvit_parser_t *parser;
   yajl_status stat;
 
   /* Process the args */
   parser = parser_get(L, 1);
-  chunk = luaL_checklstring(L, 2, &len);
+  buffer* chunk = buffer_get(L, 2);
 
-  stat = yajl_parse(parser->handle, (const unsigned char*)chunk, len);
+  stat = yajl_parse(parser->handle, (const unsigned char*)BUFFER_DATA(chunk), chunk->length);
 
   if (stat != yajl_status_ok) {
     unsigned char * str = yajl_get_error(parser->handle, 1, (const unsigned char*)chunk, len);
@@ -355,19 +355,17 @@ static int lyajl_gen_boolean (lua_State *L) {
 
 static int lyajl_gen_number (lua_State *L) {
   size_t len;
-  const char *value;
   luvit_generator_t *generator = generator_get(L, 1);
-  value = luaL_checklstring(L, 2, &len);
-  yajl_gen_number(generator->gen, value, len);
+  buffer* value = buffer_get(L, 2);
+  yajl_gen_number(generator->gen, BUFFER_DATA(value), value->length);
   return 0;
 }
 
 static int lyajl_gen_string (lua_State *L) {
   size_t len;
-  const char *value;
   luvit_generator_t *generator = generator_get(L, 1);
-  value = luaL_checklstring(L, 2, &len);
-  yajl_gen_string(generator->gen, (const unsigned char*)value, len);
+  buffer* value = buffer_get(L, 2);
+  yajl_gen_string(generator->gen, (const unsigned char*)BUFFER_DATA(value), value->length);
   return 0;
 }
 
@@ -396,11 +394,12 @@ static int lyajl_gen_array_close (lua_State *L) {
 }
 
 static int lyajl_gen_get_buf (lua_State *L) {
-  const unsigned char *buf;
+  const unsigned char *data;
   size_t len;
   luvit_generator_t *generator = generator_get(L, 1);
-  yajl_gen_get_buf(generator->gen, &buf, &len);
-  lua_pushlstring(L, (const char*)buf, len);
+  yajl_gen_get_buf(generator->gen, &data, &len);
+  buffer* buf = buffer_new(L);
+  buffer_wrap_const(buf, data, len);
   yajl_gen_clear(generator->gen);
   return 1;
 }
@@ -410,7 +409,9 @@ int lyajl_gen_on_print(void* ctx, const char* string, size_t len) {
   luv_ref_t* ref = ctx;
   lua_State *L = ref->L;
   lua_rawgeti(L, LUA_REGISTRYINDEX, ref->r);
-  lua_pushlstring(L, string, len);
+  buffer* buf = buffer_new(L);
+  // XXX: should use buffer_set but eh this is cheaper and shouldn't hurt
+  buffer_wrap_const(buf, string, len);
   lua_call(L, 1, 0);
   return 1;
 }

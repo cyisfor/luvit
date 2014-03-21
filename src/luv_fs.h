@@ -64,7 +64,8 @@ typedef struct {
   lua_State* L;
   uv_fs_t fs_req;
   luv_io_ctx_t cbs;
-  void* buf;
+  buffer* buf;
+  int buf_ref;
 } luv_fs_ref_t;
 
 #endif

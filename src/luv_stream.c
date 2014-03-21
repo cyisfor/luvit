@@ -39,14 +39,35 @@ void luv_on_read(uv_stream_t* handle, ssize_t nread, uv_buf_t buf) {
 
   if (nread >= 0) {
     luv_handle_t* lhandle = handle->data;
+    // this might stop some attempts to save a buffer being used for reading
+    // without cloning it.
+    if(lhandle->buffer->isConst == 1) {
+        luaL_error(L,"Accidentally wrote incoming data into a readonly buffer. Did you resume a coroutine from inside a data event listener?");
+    }
 
     lua_rawgeti(L, LUA_REGISTRYINDEX, lhandle->ref);
-    // got our buffer (filled by libuv) now slice it
-    buffer_slice(L, lhandle->buffer, 0, nread);
-    lua_remove(L,-2);
+    // got our buffer (filled by libuv) now slice it (probably a no-op)
+    if(nread != lhandle->buffer->length) {
+        buffer_slice(L, lhandle->buffer, 0, nread);
+        lua_remove(L,-2);
+    }
 
     lua_pushinteger (L, nread);
+
+    lhandle->buffer->isConst = 1;
     luv_emit_event(L, "data", 2);
+    /* luv_emit ends with luv_acall which ends with luv_call, no returns to the libuv event loop.
+     * That means the buffer passed as the first argument to "data" will not be overwritten
+     * before the callback has been able to look at it. The only time it gets messed up is when
+     * the callback resumes coroutines or tries to save the buffer without cloning it.
+     * That's generally a non-issue as "data" handlers all consume whatever data is in the buffer
+     * before they finish or run code elsewhere. An example of what not to do might be advisable
+     * though.
+     *
+     * tl;dr buffers will be modified like globals in the libuv main loop,
+     * and they are tied to the handle lifespan-wise.
+     */
+    lhandle->buffer->isConst = 0;
 
   } else {
     uv_err_t err = uv_last_error(luv_get_loop(L));

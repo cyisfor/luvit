@@ -73,32 +73,32 @@ static int lenv_keys(lua_State* L) {
 static int lenv_get(lua_State* L) {
   const char* name = luaL_checkstring(L, 1);
 #ifdef _WIN32
-  char* s = NULL;
   DWORD size;
   size = GetEnvironmentVariable(name, NULL, 0);
   if (size) {
+    buffer* buf = buffer_new(L);
     DWORD ret_size;
-    s = malloc(size);
-    if (!s) {
-      return luaL_error(L, "Malloc env get string variable failed.");
+    buffer_alloc(buf,size);
+    if (!buf->data) {
+      return luaL_error(L, "could not allocate memory for Windoze getenv");
     }
-    ret_size = GetEnvironmentVariable(name, s, size);
+    ret_size = GetEnvironmentVariable(name, buf->data, size);
     if (ret_size == 0 || ret_size >= size) {
-      free(s);
-      s = NULL;
+      buffer_empty(buf);
+      lua_pop(L,1);
+      lua_pushnil(L);
     }
   }
-  lua_pushstring(L, s);
-  free(s);
 #else
-  lua_pushstring(L, getenv(name));
+  char* value = getenv(name);
+  buffer_wrap(buffer_new(L),value,strlen(value));
 #endif
   return 1;
 }
 
 static int lenv_put(lua_State* L) {
-  const char* string = luaL_checkstring(L, 1);
-  int r = putenv((char*)string);
+    buffer* buf = buffer_get(L, 1);
+  int r = putenv((char*)buf->data);
 #ifdef _WIN32
   if (r) {
     return luaL_error(L, "Unknown error putting new environment");
@@ -115,15 +115,15 @@ static int lenv_put(lua_State* L) {
 
 static int lenv_set(lua_State* L) {
   const char* name = luaL_checkstring(L, 1);
-  const char* value = luaL_checkstring(L, 2);
+  buffer* value = buffer_get(L, 2);
   int overwrite = luaL_checkint(L, 3);
 
 #ifdef _WIN32
-  if (SetEnvironmentVariable(name, value) == 0) {
+  if (SetEnvironmentVariable(name, value->data) == 0) {
     return luaL_error(L, "Failed to set environment variable");
   }
 #else
-  if (setenv(name, value, overwrite)) {
+  if (setenv(name, value->data, overwrite)) {
     return luaL_error(L, "Insufficient space in environment.");
   }
 #endif

@@ -152,8 +152,9 @@ static int lhttp_parser_on_header_value(http_parser *p, const char *at, size_t l
     lua_pop(L, 2);
     return 0;
   };
-  /* Push the string argument */
-  lua_pushlstring(L, at, length);
+
+  /* Header values don't need to be interned... */
+  buffer_set(buffer_new(L),at,length);
 
   lua_call(L, 1, 1);
 
@@ -174,8 +175,9 @@ static int lhttp_parser_on_body(http_parser *p, const char *at, size_t length) {
     lua_pop(L, 2);
     return 0;
   };
-  /* Push the string argument */
-  lua_pushlstring(L, at, length);
+
+  // http body shouldn't be interned
+  buffer_set(buffer_new(L), at, length);
 
   lua_call(L, 1, 1);
 

@@ -69,9 +69,7 @@ static void luv_on_udp_recv(uv_udp_t* handle,
   }
 
   // buf.base == the read buffer's data
-  lua_rawgeti(L, LUA_REGISTRYINDEX, lhandle->buffer_ref);  
-  buffer_slice(L,buffer_get(L,-1),0,nread);
-  lua_remove(L,-2);
+  buffer_slice(L,lhandle->buffer,0,nread);
   lua_newtable(L);
 
   if (addr->sa_family == AF_INET) {
