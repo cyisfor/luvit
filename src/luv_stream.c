@@ -15,6 +15,8 @@
  *
  */
 
+#include "buffer.h"
+
 #include <stdlib.h>
 
 #include "luv_stream.h"
@@ -36,8 +38,13 @@ void luv_on_read(uv_stream_t* handle, ssize_t nread, uv_buf_t buf) {
   lua_State* L = luv_handle_get_lua(handle->data);
 
   if (nread >= 0) {
+    luv_handle_t* lhandle = handle->data;
 
-    lua_pushlstring (L, buf.base, nread);
+    lua_rawgeti(L, LUA_REGISTRYINDEX, lhandle->ref);
+    // got our buffer (filled by libuv) now slice it
+    buffer_slice(L, lhandle->buffer, 0, nread);
+    lua_remove(L,-2);
+
     lua_pushinteger (L, nread);
     luv_emit_event(L, "data", 2);
 
@@ -212,7 +219,7 @@ int luv_write(lua_State* L) {
   uv_stream_t* handle = (uv_stream_t*)luv_checkudata(L, 1, "stream");
   size_t len;
   luv_io_ctx_t *cbs;
-  const char* chunk = luaL_checklstring(L, 2, &len);
+  buffer* chunk = buffer_get(L, 2);
 
   uv_write_t* req = (uv_write_t*)malloc(sizeof(uv_write_t));
   cbs = malloc(sizeof(luv_io_ctx_t));
@@ -225,9 +232,11 @@ int luv_write(lua_State* L) {
   req->data = (void*)cbs;
 
   luv_handle_ref(L, handle->data, 1);
-  buf = uv_buf_init((char*)chunk, len);
+  buf = uv_buf_init((char*)BUFFER_DATA(chunk), chunk->length);
 
   uv_write(req, handle, &buf, 1, luv_after_write);
+  // XXX: reference counting for buffers? otherwise it might get collected before uv_write writes
+  // and buf.data would be unallocated memory.
   return 0;
 }
 

@@ -68,6 +68,9 @@ typedef struct {
                           invalid pointer. */
   int ref;             /* ref is null when refCount is 0 meaning we're weak */
   const char* type;
+
+  buffer* buffer; /* a buffer for holding incoming data so as to easily pass it to lua */
+  int buffer_ref; /* keeping buffer at a luaL_ref index in LUA_REGISTRYINDEX */
 } luv_handle_t;
 
 /* Create a new luv_handle.  Input is the lua state and the size of the desired 

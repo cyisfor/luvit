@@ -15,6 +15,8 @@
  *
  */
 
+#include "buffer.h"
+
 #include <stdlib.h>
 #include <assert.h>
 
@@ -66,7 +68,10 @@ static void luv_on_udp_recv(uv_udp_t* handle,
     return;
   }
 
-  lua_pushlstring(L, buf.base, nread);
+  // buf.base == the read buffer's data
+  lua_rawgeti(L, LUA_REGISTRYINDEX, lhandle->buffer_ref);  
+  buffer_slice(L,buffer_get(L,-1),0,nread);
+  lua_remove(L,-2);
   lua_newtable(L);
 
   if (addr->sa_family == AF_INET) {
@@ -220,7 +225,7 @@ static int luv_udp__send(lua_State* L, int family) {
   uv_buf_t buf;
   uv_udp_t* handle = (uv_udp_t*)luv_checkudata(L, 1, "udp");
   size_t len;
-  const char* chunk = luaL_checklstring(L, 2, &len);
+  buffer* chunk = buffer_get(L, 2);
   luv_udp_ref_t *ref;
 
   uv_udp_send_t* req = (uv_udp_send_t*)malloc(sizeof(uv_udp_send_t));
@@ -241,7 +246,7 @@ static int luv_udp__send(lua_State* L, int family) {
   /* Store the chunk
    * TODO: this is probably unsafe, should investigate
    */
-  buf = uv_buf_init((char*)chunk, len);
+  buf = uv_buf_init((char*)BUFFER_DATA(chunk), chunk->length);
 
   switch(family) {
   case AF_INET:

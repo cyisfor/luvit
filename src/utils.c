@@ -209,6 +209,10 @@ luv_handle_t* luv_handle_create(lua_State* L, size_t size, const char* type) {
   }
   lhandle->ref = LUA_NOREF;
   lhandle->type = type;
+
+  lhandle->buffer = NULL;
+  lhandle->buffer_ref = LUA_NOREF;
+
   return lhandle;
 }
 
@@ -260,6 +264,16 @@ void luv_handle_unref(lua_State* L, luv_handle_t* lhandle) {
       luaL_unref(L, LUA_REGISTRYINDEX, lhandle->threadref);
       lhandle->threadref = LUA_NOREF;
     }
+    if(lhandle->buffer_ref != LUA_NOREF) {
+        luaL_unref(L, LUA_REGISTRYINDEX, lhandle->buffer_ref);
+        lhandle->buffer_ref = LUA_NOREF;
+    }
+    if(lhandle->buffer) {
+        buffer_empty(lhandle->buffer);
+        // the buffer itself is userdata, and will be collected
+        lhandle->buffer = NULL;
+    }
+
     lhandle->ref = LUA_NOREF;
 /*    printf("makeWeak\t%s lhandle=%p handle=%p\n", lhandle->type, lhandle, lhandle->handle);*/
   }
