@@ -15,8 +15,6 @@
  *
  */
 
-#include "buffer.h"
-
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
@@ -144,7 +142,8 @@ int luv_process_fs_result(lua_State* L, uv_fs_t* req) {
 
       case UV_FS_READ:
         argc = 2;
-        buffer_slice(L,ref->buf,0,req->result);
+        // this was already filled automagically
+        lua_rawgeti(L, LUA_REGISTRYINDEX, ref->buf_ref);
         lua_pushinteger(L, req->result);
         break;
 
@@ -244,6 +243,11 @@ int luv_fs_close(lua_State* L) {
   FS_CALL(close, 2, NULL, file);
 }
 
+inline int roundout(int exact, int blocksize) {    
+    if(exact==0) return blocksize;
+    return (exact - 1) - (exact - 1) % blocksize + blocksize;
+}
+
 int luv_fs_read(lua_State* L) {
   uv_file file = luaL_checkint(L, 1);
   int offset = -1;
@@ -257,11 +261,14 @@ int luv_fs_read(lua_State* L) {
   luv_fs_ref_t* self = ((luv_fs_ref_t*)req->data);
   buffer* buf = self->buf;
   if(buf == NULL) {
-      self->buf = buf = buffer_new(L);
-      buf_ref = luaL_ref(L, LUA_REGISTRYINDEX);
+      self->buf = buf = buffer_new(L,roundout(length,0x100));
+      self->buf_ref = luaL_ref(L, LUA_REGISTRYINDEX);
   }
   if(buf->length < length) {
-      buffer_alloc(buf,length);
+      self->buf = buf = buffer_new(L, roundout(length,0x100));
+      // just reuse the existing buf_ref since we want the old 
+      // one to be collected.
+      lua_rawseti(L, LUA_REGISTRYINDEX, self->buf_ref);
   }
 
   FS_CALL(read, 4, NULL, file, buf->data, buf->length, offset);

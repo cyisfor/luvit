@@ -307,8 +307,9 @@ static int
 tls_conn_enc_in(lua_State *L) {
   size_t len;
   tls_conn_t *tc = getCONN(L, 1);
-  buffer* buf = buffer_get(L, 2);
-  int bytes_written = BIO_write(tc->bio_read, BUFFER_DATA(buf), buf->length);
+  derpslice value;
+  buffer_getsliced(L, 2, &value);
+  int bytes_written = BIO_write(tc->bio_read, value.data, value.length);
   tls_handle_bio_error(tc, tc->bio_read, tc->ssl, bytes_written, "BIO_write");
   lua_pushnumber(L, bytes_written);
   return 1;
@@ -321,11 +322,12 @@ tls_conn_enc_out(lua_State *L) {
   int bytes_read = BIO_read(tc->bio_write, pool, sizeof(pool));
   tls_handle_bio_error(tc, tc->bio_write, tc->ssl, bytes_read, "BIO_read");
   lua_pushnumber(L, bytes_read);
-  buffer* buf = buffer_new(L);
   if (bytes_read > 0) {
-    buffer_set(pool, bytes_read);
+    buffer_set(buffer_new(L, bytes_read), pool, bytes_read);
+    return 2;
+  } else {
+    return 1;
   }
-  return 2;
 }
 
 static int
@@ -362,17 +364,19 @@ tls_conn_clear_out(lua_State *L) {
   bytes_read = SSL_read(tc->ssl, pool, sizeof(pool));
   tls_handle_ssl_error(tc, tc->ssl, bytes_read, "SSL_read:ClearOut");
   lua_pushnumber(L, bytes_read);
-  buffer* buf = buffer_new(L);
   if (bytes_read > 0) {
-    buffer_set(pool, bytes_read);
+    buffer_set(buffer_new(L, bytes_read), pool, bytes_read);
+    return 2;
+  } else {
+    return 1;
   }
-  return 2;
 }
 
 static int
 tls_conn_clear_in(lua_State *L) {
   tls_conn_t *tc = getCONN(L, 1);
-  buffer* buf = buffer_get(L, 2);
+  derpslice value;
+  buffer_getsliced(L, 2, &value);
   int bytes_written;
 
   if (!SSL_is_init_finished(tc->ssl)) {
@@ -391,7 +395,7 @@ tls_conn_clear_in(lua_State *L) {
     }
   }
 
-  bytes_written = SSL_write(tc->ssl, BUFFER_DATA(buf), buffer->length);
+  bytes_written = SSL_write(tc->ssl, value.data, value.length);
   DBG("bytes_written = %d, len = %ld\n", bytes_written, buffer->length);
   tls_handle_ssl_error(tc, tc->ssl, bytes_written, "SSL_write:ClearIn");
   lua_pushnumber(L, bytes_written);
@@ -600,7 +604,7 @@ tls_conn_get_peer_certificate(lua_State *L)
                          X509_NAME_FLAGS) > 0) {
     BIO_get_mem_ptr(bio, &mem);
     lua_pushstring(L, "subject");
-    buffer_set(buffer_new(L), mem->data, mem->length);
+    buffer_set(buffer_new(L, mem->length), mem->data, mem->length);
     lua_settable(L, -3);
   }
   (void) BIO_reset(bio);
@@ -609,7 +613,7 @@ tls_conn_get_peer_certificate(lua_State *L)
                          X509_NAME_FLAGS) > 0) {
     BIO_get_mem_ptr(bio, &mem);
     lua_pushstring(L, "issuer");
-    buffer_set(buffer_new(L), mem->data, mem->length);
+    buffer_set(buffer_new(L, mem->length), mem->data, mem->length);
     lua_settable(L, -3);
   }
   (void) BIO_reset(bio);
@@ -627,7 +631,7 @@ tls_conn_get_peer_certificate(lua_State *L)
 
     BIO_get_mem_ptr(bio, &mem);
     lua_pushstring(L, "subjectaltname");
-    buffer_set(buffer_new(L), mem->data, mem->length);
+    buffer_set(buffer_new(L, mem->length), mem->data, mem->length);
     lua_settable(L, -3);
 
     (void) BIO_reset(bio);
@@ -638,14 +642,14 @@ tls_conn_get_peer_certificate(lua_State *L)
     BN_print(bio, rsa->n);
     BIO_get_mem_ptr(bio, &mem);
     lua_pushstring(L, "modulus");
-    buffer_set(buffer_new(L), mem->data, mem->length);
+    buffer_set(buffer_new(L, mem->length), mem->data, mem->length);
     lua_settable(L, -3);
     (void) BIO_reset(bio);
 
     BN_print(bio, rsa->e);
     BIO_get_mem_ptr(bio, &mem);
     lua_pushstring(L, "e");
-    buffer_set(buffer_new(L), mem->data, mem->length);
+    buffer_set(buffer_new(L, mem->length), mem->data, mem->length);
     lua_settable(L, -3);
     (void) BIO_reset(bio);
   }
@@ -653,14 +657,14 @@ tls_conn_get_peer_certificate(lua_State *L)
   ASN1_TIME_print(bio, X509_get_notBefore(peer_cert));
   BIO_get_mem_ptr(bio, &mem);
   lua_pushstring(L, "valid_from");
-  buffer_set(buffer_new(L), mem->data, mem->length);
+  buffer_set(buffer_new(L, mem->length), mem->data, mem->length);
   lua_settable(L, -3);
   (void) BIO_reset(bio);
 
   ASN1_TIME_print(bio, X509_get_notAfter(peer_cert));
   BIO_get_mem_ptr(bio, &mem);
   lua_pushstring(L, "valid_to");
-  buffer_set(buffer_new(L), mem->data, mem->length);
+  buffer_set(buffer_new(L, mem->length), mem->data, mem->length);
   lua_settable(L, -3);
   BIO_free(bio);
 
@@ -683,7 +687,8 @@ tls_conn_get_peer_certificate(lua_State *L)
 
     lua_pushstring(L, "fingerprint");
 
-    buffer_set(buffer_new(L), fingerprint, strlen(fingerprint));
+    ssize_t flen = strlen(fingerprint);
+    buffer_set(buffer_new(L, flen), fingerprint, flen);
     lua_settable(L, -3);
   }
 
@@ -698,7 +703,8 @@ tls_conn_get_peer_certificate(lua_State *L)
       memset(buf, 0, sizeof(buf));
       OBJ_obj2txt(buf, sizeof(buf) - 1, sk_ASN1_OBJECT_value(eku, j), 1);
       lua_pushnumber(L, j + 1);
-      buffer_set(buffer_new(L), buf, strlen(buf));
+      ssize_t blen = strlen(buf);
+      buffer_set(buffer_new(L, blen), buf, blen);
       lua_settable(L, -3);
     }
     sk_ASN1_OBJECT_pop_free(eku, ASN1_OBJECT_free);

@@ -49,14 +49,15 @@ static BIO* _lua_load_bio(lua_State *L, int index) {
   int r = -1;
   BIO *bio;
 
-  buffer* buf = buffer_get(L, index);
+  derpslice value;
+  buffer_getsliced(L, index, &value);
 
   bio = BIO_new(BIO_s_mem());
   if (!bio) {
     return NULL;
   }
 
-  r = BIO_write(bio, BUFFER_DATA(buf), buf->length);
+  r = BIO_write(bio, value.data, value.length);
 
   if (r <= 0) {
     BIO_free(bio);
@@ -193,14 +194,15 @@ tls_sc_set_key(lua_State *L) {
 
   ctx = getSC(L);
 
-  buffer* keybuf = buffer_get(L, 2);
+  
+  derpslice keybuf;
+  buffer_getsliced(L, 2, &keybuf);
   passphrase = luaL_optlstring(L, 3, NULL, &plen);
 
-  bio = str2bio(BUFFER_DATA(keybuf), keybuf->len);
-  if(keybuf->isConst == 0) {
-      memset(BUFFER_DATA(keybuf),0,keybuf->len);
+  bio = str2bio(keybuf.data, keybuf.len);
+  if(keybuf.isConst == 0) {
+    memset(keybuf.data, 0, keybuf.length);
   }
-  buffer_empty(keybuf);
 
   if (!bio) {
     return luaL_error(L, "tls_sc_set_key: Failed to convert Key into a BIO");
@@ -343,13 +345,13 @@ tls_sc_set_cert(lua_State *L) {
 
   ctx = getSC(L);
 
-  buffer* keybuf = buffer_get(L, 2);
+  derpslice keybuf;
+  buffer_getsliced(L, 2, &keybuf);
 
-  bio = str2bio(BUFFER_DATA(keybuf), keybuf->length);
-  if(keybuf->isConst == 0) {
-      memset(BUFFER_DATA(keybuf),0,keybuf->len);
+  bio = str2bio(keybuf.data, keybuf.length);
+  if(keybuf.isConst == 0) {
+      memset(keybuf.data,0,keybuf.length);
   }
-  buffer_empty(keybuf);
   if (!bio) {
     return luaL_error(L, "tls_sc_set_key: Failed to convert Cert into a BIO");
   }
@@ -383,9 +385,10 @@ tls_sc_add_trusted_cert(lua_State *L) {
     SSL_CTX_set_cert_store(ctx->ctx, ctx->ca_store);
   }
 
-  buffer* certbuf = buffer_get(L, 2);
+  derpslice certbuf = {};
+  buffer_getsliced(L, 2, &certbuf);
 
-  bio = str2bio(BUFFER_DATA(certbuf), certbuf->length);
+  bio = str2bio(certbuf.data, certbuf.length);
 
   if (!bio) {
     return luaL_error(L, "tls_sc_add_trusted_cert: Failed to convert Cert into a BIO");
@@ -412,11 +415,12 @@ tls_sc_set_ciphers(lua_State *L) {
 
   ctx = getSC(L);
 
-  buffer* cipherbuf = buffer_get(L, 2);
+  derpslice cipherbuf;
+  buffer_getsliced(L, 2, &cipherbuf);
 
   ERR_clear_error();
 
-  rv = SSL_CTX_set_cipher_list(ctx->ctx, cipherbuf->data);
+  rv = SSL_CTX_set_cipher_list(ctx->ctx, cipherbuf.data);
 
   if (rv == 0) {
     return tls_fatal_error(L);

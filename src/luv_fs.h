@@ -18,6 +18,8 @@
 #ifndef LUV_FS
 #define LUV_FS
 
+#include "buffer.h"
+
 #include "lua.h"
 #include "lauxlib.h"
 #include "uv.h"

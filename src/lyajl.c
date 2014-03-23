@@ -15,6 +15,8 @@
  *
  */
 
+#include "buffer.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -127,8 +129,7 @@ static int lyajl_on_string (void * ctx, const unsigned char* value, size_t len) 
 
   /* If there is a callback, call it */
   if (lua_isfunction (L, -1)) {
-    buffer* buf = buffer_new(L);
-    buffer_wrap_const(buf,value,len);
+    buffer_wrap_const(L,value,len);
     lua_call(L, 1, 0);
   } else {
     lua_pop(L, 1);
@@ -260,12 +261,13 @@ static int lyajl_parse (lua_State *L) {
 
   /* Process the args */
   parser = parser_get(L, 1);
-  buffer* chunk = buffer_get(L, 2);
+  derpslice chunk;
+  buffer_getsliced(L, 2, &chunk);
 
-  stat = yajl_parse(parser->handle, (const unsigned char*)BUFFER_DATA(chunk), chunk->length);
+  stat = yajl_parse(parser->handle, (const unsigned char*)chunk.data, chunk.length);
 
   if (stat != yajl_status_ok) {
-    unsigned char * str = yajl_get_error(parser->handle, 1, (const unsigned char*)chunk, len);
+    unsigned char * str = yajl_get_error(parser->handle, 1, (const unsigned char*)chunk.data, chunk.length);
     luaL_error(L, (const char *) str);
     yajl_free_error(parser->handle, str); /* This doesn't actually happen */
   }
@@ -356,16 +358,18 @@ static int lyajl_gen_boolean (lua_State *L) {
 static int lyajl_gen_number (lua_State *L) {
   size_t len;
   luvit_generator_t *generator = generator_get(L, 1);
-  buffer* value = buffer_get(L, 2);
-  yajl_gen_number(generator->gen, BUFFER_DATA(value), value->length);
+  derpslice value;
+  buffer_getsliced(L, 2, &value);
+  yajl_gen_number(generator->gen, value.data, value.length);
   return 0;
 }
 
 static int lyajl_gen_string (lua_State *L) {
   size_t len;
   luvit_generator_t *generator = generator_get(L, 1);
-  buffer* value = buffer_get(L, 2);
-  yajl_gen_string(generator->gen, (const unsigned char*)BUFFER_DATA(value), value->length);
+  derpslice value;
+  buffer_getsliced(L, 2, &value);
+  yajl_gen_string(generator->gen, (const unsigned char*)value.data, value.length);
   return 0;
 }
 
@@ -398,8 +402,8 @@ static int lyajl_gen_get_buf (lua_State *L) {
   size_t len;
   luvit_generator_t *generator = generator_get(L, 1);
   yajl_gen_get_buf(generator->gen, &data, &len);
-  buffer* buf = buffer_new(L);
-  buffer_wrap_const(buf, data, len);
+  // can't buffer_wrap here since we're clearing the yajl buffer
+  buffer_set(buffer_new(L,len),data,len);
   yajl_gen_clear(generator->gen);
   return 1;
 }
@@ -409,9 +413,8 @@ int lyajl_gen_on_print(void* ctx, const char* string, size_t len) {
   luv_ref_t* ref = ctx;
   lua_State *L = ref->L;
   lua_rawgeti(L, LUA_REGISTRYINDEX, ref->r);
-  buffer* buf = buffer_new(L);
   // XXX: should use buffer_set but eh this is cheaper and shouldn't hurt
-  buffer_wrap_const(buf, string, len);
+  buffer_wrap_const(L, string, len);
   lua_call(L, 1, 0);
   return 1;
 }

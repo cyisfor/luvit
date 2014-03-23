@@ -15,6 +15,8 @@
  *
  */
 
+#include "buffer.h"
+
 #include <stdlib.h>
 #include <assert.h>
 
@@ -51,21 +53,20 @@ void luv_emit_event(lua_State* L, const char* name, int nargs) {
   luv_acall(L, nargs, 0, name);
 }
 
-static void setupBuffer(luv_handle_t* handle) {
+static void setupBuffer(luv_handle_t* handle, size_t suggested_size) {
     lua_State *L = lhandle->L;
-    handle->buffer = buffer_new(L);
-    handle->bufferref = luaL_ref(L, LUA_REGISTRYINDEX);
+    handle->buffer = buffer_new(L, suggested_size);
+    handle->buffer_ref = luaL_ref(L, LUA_REGISTRYINDEX);
 }
 
 uv_buf_t luv_on_alloc(uv_handle_t* handle, size_t suggested_size) {
   uv_buf_t buf;
   luv_handle_t* lhandle = handle->data;
   if(lhandle->buffer == NULL) {
-      setupBuffer(handle);
+      setupBuffer(handle, suggested_size);
   }
-  buffer_alloc(lhandle->buffer,suggested_size);
   buf.base = lhandle->buffer->data;
-  buf.len = lhandle->buffer->length;
+  buf.len = lhandle->buffer->size;
   return buf;
 }
 

@@ -15,6 +15,8 @@
  *
  */
 
+#include "buffer.h"
+
 #include <string.h>
 #include <stdlib.h>
 #include "lhttp_parser.h"
@@ -154,7 +156,7 @@ static int lhttp_parser_on_header_value(http_parser *p, const char *at, size_t l
   };
 
   /* Header values don't need to be interned... */
-  buffer_set(buffer_new(L),at,length);
+  buffer_set(buffer_new(L,length),at,length);
 
   lua_call(L, 1, 1);
 
@@ -177,7 +179,7 @@ static int lhttp_parser_on_body(http_parser *p, const char *at, size_t length) {
   };
 
   // http body shouldn't be interned
-  buffer_set(buffer_new(L), at, length);
+  buffer_set(buffer_new(L,length), at, length);
 
   lua_call(L, 1, 1);
 

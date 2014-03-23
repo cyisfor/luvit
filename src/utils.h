@@ -18,6 +18,8 @@
 #ifndef LUV_UTILS
 #define LUV_UTILS
 
+#include "buffer.h"
+
 #include "lua.h"
 #include "lauxlib.h"
 #include "uv.h"

@@ -45,6 +45,7 @@ X(set_multicast_loopback, uv_udp_set_multicast_loop);
 
 typedef struct {
   int ref;
+  int chunk;
 } luv_udp_ref_t;
 
 static void luv_on_udp_recv(uv_udp_t* handle,
@@ -68,8 +69,9 @@ static void luv_on_udp_recv(uv_udp_t* handle,
     return;
   }
 
-  // buf.base == the read buffer's data
-  buffer_slice(L,lhandle->buffer,0,nread);
+  // buf.data == the read buffer's data
+  lua_rawgeti(L, LUA_REGISTRY, lhandle->buffer_ref);
+  buffer_pushslice(L, 0,nread);
   lua_newtable(L);
 
   if (addr->sa_family == AF_INET) {
@@ -103,7 +105,6 @@ static void luv_on_udp_send(uv_udp_send_t* req, int status) {
   ref =  req->data;
   lua_rawgeti(L, LUA_REGISTRYINDEX, ref->ref);
   luaL_unref(L, LUA_REGISTRYINDEX, ref->ref);
-  free(ref);
 
   if (lua_isfunction(L, -1)) {
     if (status != 0) {
@@ -115,6 +116,9 @@ static void luv_on_udp_send(uv_udp_send_t* req, int status) {
   } else {
     lua_pop(L, 1);
   }
+  /* done with the chunk too */
+  luaL_unref(L, LUA_REGISTRYINDEX, ref->chunk);
+  free(ref);
 
   luv_handle_unref(L, req->handle->data);
   free(req);
@@ -222,9 +226,10 @@ int luv_udp_getsockname(lua_State* L) {
 static int luv_udp__send(lua_State* L, int family) {
   uv_buf_t buf;
   uv_udp_t* handle = (uv_udp_t*)luv_checkudata(L, 1, "udp");
-  size_t len;
-  buffer* chunk = buffer_get(L, 2);
   luv_udp_ref_t *ref;
+
+  derpslice chunk;
+  buffer_getsliced(L, 2, &chunk);
 
   uv_udp_send_t* req = (uv_udp_send_t*)malloc(sizeof(uv_udp_send_t));
   int port = luaL_checkint(L, 3);
@@ -237,6 +242,10 @@ static int luv_udp__send(lua_State* L, int family) {
   lua_pushvalue(L, 5);
   ref = malloc(sizeof(*ref));
   ref->ref = luaL_ref(L, LUA_REGISTRYINDEX);
+  /* and the chunk */
+  lua_pushvalue(L, 2);
+  ref->chunk = luaL_ref(L, LUA_REGISTRYINDEX);
+
   req->data = ref;
 
   luv_handle_ref(L, handle->data, 1);
@@ -244,7 +253,7 @@ static int luv_udp__send(lua_State* L, int family) {
   /* Store the chunk
    * TODO: this is probably unsafe, should investigate
    */
-  buf = uv_buf_init((char*)BUFFER_DATA(chunk), chunk->length);
+  buf = uv_buf_init((char*)chunk.data, chunk.length);
 
   switch(family) {
   case AF_INET:

@@ -45,13 +45,7 @@ void luv_on_read(uv_stream_t* handle, ssize_t nread, uv_buf_t buf) {
         luaL_error(L,"Accidentally wrote incoming data into a readonly buffer. Did you resume a coroutine from inside a data event listener?");
     }
 
-    lua_rawgeti(L, LUA_REGISTRYINDEX, lhandle->ref);
-    // got our buffer (filled by libuv) now slice it (probably a no-op)
-    if(nread != lhandle->buffer->length) {
-        buffer_slice(L, lhandle->buffer, 0, nread);
-        lua_remove(L,-2);
-    }
-
+    lua_rawgeti(L, LUA_REGISTRYINDEX, lhandle->buffer_ref);
     lua_pushinteger (L, nread);
 
     lhandle->buffer->isConst = 1;
@@ -238,26 +232,31 @@ int luv_write_queue_size(lua_State* L) {
 int luv_write(lua_State* L) {
   uv_buf_t buf;
   uv_stream_t* handle = (uv_stream_t*)luv_checkudata(L, 1, "stream");
-  size_t len;
   luv_io_ctx_t *cbs;
-  buffer* chunk = buffer_get(L, 2);
+
+  derpslice chunk;
+  buffer_getsliced(L, 2, &chunk);
 
   uv_write_t* req = (uv_write_t*)malloc(sizeof(uv_write_t));
   cbs = malloc(sizeof(luv_io_ctx_t));
   luv_io_ctx_init(cbs);
 
-  /* Store a reference to the callback */
+  /* Store a reference to the buffer and callback 
+   * so it doesn't get collected before we access chunk.data
+   */
   luv_io_ctx_add(L, cbs, 2);
   luv_io_ctx_callback_add(L, cbs, 3);
 
   req->data = (void*)cbs;
 
   luv_handle_ref(L, handle->data, 1);
-  buf = uv_buf_init((char*)BUFFER_DATA(chunk), chunk->length);
+  buf = uv_buf_init((char*)chunk.data, chunk.length);
+  // chunk goes away, but chunk.data will remain good until after luv_after_write
+
+  luv_handle_t* lhandle = handle->data;
 
   uv_write(req, handle, &buf, 1, luv_after_write);
-  // XXX: reference counting for buffers? otherwise it might get collected before uv_write writes
-  // and buf.data would be unallocated memory.
+
   return 0;
 }
 
